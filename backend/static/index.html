@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="vi" class="">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phân Loại Chó Mèo - AI Classifier</title>
+    <meta name="description" content="Ứng dụng phân loại hình ảnh chó và mèo sử dụng Machine Learning">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&family=Merriweather:wght@300;400;700&family=Source+Code+Pro:wght@400;500;600&display=swap"
+        rel="stylesheet">
+
+    <!-- External CSS -->
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        /* Theme Toggle Button */
+        .theme-toggle {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            z-index: 1000;
+            background: var(--card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-md);
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .theme-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .theme-toggle-text {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--foreground);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <span id="themeIcon">🌙</span>
+        <span class="theme-toggle-text" id="themeText">Dark</span>
+    </button>
+
+    <div class="container">
+        <header>
+            <h1>Dogs & Cats Classifier</h1>
+        </header>
+
+        <div class="card">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📸</div>
+                <div class="upload-text">Kéo thả ảnh vào đây hoặc click để chọn</div>
+                <div class="upload-hint">Hỗ trợ: JPG, PNG, JPEG</div>
+                <input type="file" id="fileInput" accept="image/*">
+            </div>
+
+            <div class="preview-container" id="previewContainer">
+                <img id="previewImage" class="preview-image" alt="Preview">
+                <button class="btn" id="predictBtn">
+                    <span class="btn-text">Phân Tích Hình Ảnh</span>
+                </button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Đang phân tích...</p>
+            </div>
+
+            <div class="result-container" id="resultContainer">
+                <div class="result-label">Kết quả phân loại</div>
+                <div class="result-value">
+                    <span class="result-icon" id="resultIcon"></span>
+                    <span id="resultText"></span>
+                </div>
+                <div class="result-label">Độ tin cậy</div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" id="confidenceFill"></div>
+                </div>
+                <div class="confidence-text" id="confidenceText"></div>
+            </div>
+
+            <div class="error" id="error"></div>
+        </div>
+    </div>
+
+    <footer>
+        <p>CNN Classifier | Made by いつき using Nature Theme</p>
+    </footer>
+
+    <script>
+        // Theme Toggle
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        const themeText = document.getElementById('themeText');
+        const html = document.documentElement;
+
+        // Check for saved theme preference or default to 'light'
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        html.classList.toggle('dark', currentTheme === 'dark');
+        updateThemeButton(currentTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const isDark = html.classList.toggle('dark');
+            const newTheme = isDark ? 'dark' : 'light';
+            localStorage.setItem('theme', newTheme);
+            updateThemeButton(newTheme);
+        });
+
+        function updateThemeButton(theme) {
+            if (theme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light';
+            } else {
+                themeIcon.textContent = '🌙';
+                themeText.textContent = 'Dark';
+            }
+        }
+
+        // Image Classification
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const predictBtn = document.getElementById('predictBtn');
+        const loading = document.getElementById('loading');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultIcon = document.getElementById('resultIcon');
+        const resultText = document.getElementById('resultText');
+        const confidenceFill = document.getElementById('confidenceFill');
+        const confidenceText = document.getElementById('confidenceText');
+        const errorDiv = document.getElementById('error');
+
+        const API_URL = 'http://localhost:8000/predict';
+
+        // Click to upload
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        // File input change
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleFile(file);
+            }
+        });
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        }
+
+        function handleFile(file) {
+            // Reset states
+            resultContainer.style.display = 'none';
+            errorDiv.style.display = 'none';
+
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+
+            // Store file for prediction
+            predictBtn.onclick = () => predictImage(file);
+        }
+
+        async function predictImage(file) {
+            try {
+                // Show loading
+                loading.style.display = 'block';
+                resultContainer.style.display = 'none';
+                errorDiv.style.display = 'none';
+                predictBtn.disabled = true;
+
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // Make prediction
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Prediction failed');
+                }
+
+                const data = await response.json();
+
+                // Hide loading
+                loading.style.display = 'none';
+                predictBtn.disabled = false;
+
+                // Show result
+                displayResult(data);
+
+            } catch (error) {
+                loading.style.display = 'none';
+                predictBtn.disabled = false;
+                showError('Có lỗi xảy ra khi phân tích. Vui lòng thử lại!');
+                console.error('Error:', error);
+            }
+        }
+
+        function displayResult(data) {
+            const { prediction, confidence } = data;
+
+            // Set icon and text
+            if (prediction === 'dog') {
+                resultIcon.textContent = '🐶';
+                resultText.textContent = 'CHÓ';
+                resultText.style.background = 'linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)';
+            } else {
+                resultIcon.textContent = '🐱';
+                resultText.textContent = 'MÈO';
+                resultText.style.background = 'linear-gradient(135deg, #81c784 0%, #66bb6a 100%)';
+            }
+
+            resultText.style.webkitBackgroundClip = 'text';
+            resultText.style.webkitTextFillColor = 'transparent';
+            resultText.style.backgroundClip = 'text';
+
+            // Set confidence
+            const confidencePercent = (confidence * 100).toFixed(1);
+            confidenceFill.style.width = confidencePercent + '%';
+            confidenceText.textContent = `${confidencePercent}% chắc chắn`;
+
+            // Show result
+            resultContainer.style.display = 'block';
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>
